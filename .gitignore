@@ -1,0 +1,45 @@
+# dependencies
+node_modules/
+
+# build artifacts
+dist/
+build/
+out/
+coverage/
+
+# env
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# java/kotlin
+.gradle/
+.idea/
+*.iml
+
+# flutter
+.dart_tool/
+.packages
+
+# os
+.DS_Store
+Thumbs.db
+
+# editors
+.vscode/
+
+# misc
+*.tmp
