@@ -1,10 +1,11 @@
 import * as React from "react";
+import Link from "next/link";
 
 export function Sidebar({
   items,
   active,
 }: {
-  items: Array<{ id: string; label: string; badge?: string }>;
+  items: Array<{ id: string; label: string; href?: string; badge?: string }>;
   active: string;
 }) {
   return (
@@ -18,10 +19,14 @@ export function Sidebar({
       </div>
       <nav>
         {items.map((item) => (
-          <a key={item.id} className={`nav-item ${active === item.id ? "active" : ""}`.trim()} href="#">
+          <Link
+            key={item.id}
+            className={`nav-item ${active === item.id ? "active" : ""}`.trim()}
+            href={item.href ?? "#"}
+          >
             <span>{item.label}</span>
             {item.badge ? <strong>{item.badge}</strong> : null}
-          </a>
+          </Link>
         ))}
       </nav>
     </aside>

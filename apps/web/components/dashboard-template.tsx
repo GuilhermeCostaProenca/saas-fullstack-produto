@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
@@ -11,7 +10,8 @@ import { Select } from "./ui/select";
 import { Sidebar } from "./ui/sidebar";
 import { DataTable } from "./ui/table";
 import { Topbar } from "./ui/topbar";
-import { DashboardSummary, TOKEN_KEY, getDashboardSummary } from "../lib/api";
+import { DashboardSummary, getDashboardSummary } from "../lib/api";
+import { useSessionToken } from "../lib/use-session-token";
 
 const queue = [
   { project: "Atlas CRM", task: "Implement billing webhooks", status: "Doing", owner: "You", risk: "Low" },
@@ -28,18 +28,14 @@ const board = {
 };
 
 export function DashboardTemplate() {
-  const router = useRouter();
+  const { token, loading: authLoading, logout } = useSessionToken();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadSummary() {
-      const token = localStorage.getItem(TOKEN_KEY);
-      if (!token) {
-        router.replace("/login");
-        return;
-      }
+      if (!token) return;
 
       setLoading(true);
       setError(null);
@@ -54,7 +50,7 @@ export function DashboardTemplate() {
     }
 
     loadSummary();
-  }, [router]);
+  }, [token]);
 
   const metrics = [
     { label: "Active Projects", value: `${summary?.projectCount ?? "-"}`, trend: "Real data" },
@@ -63,12 +59,7 @@ export function DashboardTemplate() {
     { label: "Done", value: `${summary?.byStatus.done ?? "-"}`, trend: "Delivered" },
   ];
 
-  function handleLogout() {
-    localStorage.removeItem(TOKEN_KEY);
-    router.push("/login");
-  }
-
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <main className="shell">
         <section className="content">
@@ -83,7 +74,7 @@ export function DashboardTemplate() {
       <main className="shell">
         <section className="content">
           <EmptyState title="Dashboard unavailable" message={error} />
-          <Button onClick={handleLogout}>Back to login</Button>
+          <Button onClick={logout}>Back to login</Button>
         </section>
       </main>
     );
@@ -94,11 +85,10 @@ export function DashboardTemplate() {
       <Sidebar
         active="overview"
         items={[
-          { id: "overview", label: "Overview" },
-          { id: "projects", label: "Projects", badge: "19" },
-          { id: "tasks", label: "Tasks", badge: "58" },
-          { id: "analytics", label: "Analytics" },
-          { id: "settings", label: "Settings" },
+          { id: "overview", label: "Overview", href: "/" },
+          { id: "projects", label: "Projects", badge: `${summary?.projectCount ?? "-"}`, href: "/projects" },
+          { id: "tasks", label: "Tasks", badge: `${summary?.taskCount ?? "-"}`, href: "/tasks" },
+          { id: "settings", label: "Settings", href: "/settings" },
         ]}
       />
 
@@ -129,7 +119,7 @@ export function DashboardTemplate() {
           />
           <div className="controls-action">
             <Button variant="ghost">Reset</Button>
-            <Button variant="secondary" onClick={handleLogout}>
+            <Button variant="secondary" onClick={logout}>
               Logout
             </Button>
           </div>
