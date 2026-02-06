@@ -43,3 +43,7 @@ Thumbs.db
 
 # misc
 *.tmp
+
+# next build artifacts
+.next/
+apps/web/.next/
