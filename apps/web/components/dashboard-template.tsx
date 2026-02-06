@@ -1,3 +1,7 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
@@ -7,13 +11,7 @@ import { Select } from "./ui/select";
 import { Sidebar } from "./ui/sidebar";
 import { DataTable } from "./ui/table";
 import { Topbar } from "./ui/topbar";
-
-const metrics = [
-  { label: "MRR", value: "$42.8k", trend: "+12.4%" },
-  { label: "Active Projects", value: "19", trend: "+3" },
-  { label: "Tasks In Progress", value: "58", trend: "-4" },
-  { label: "SLA Compliance", value: "96%", trend: "+1.8%" },
-];
+import { DashboardSummary, TOKEN_KEY, getDashboardSummary } from "../lib/api";
 
 const queue = [
   { project: "Atlas CRM", task: "Implement billing webhooks", status: "Doing", owner: "You", risk: "Low" },
@@ -30,6 +28,67 @@ const board = {
 };
 
 export function DashboardTemplate() {
+  const router = useRouter();
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadSummary() {
+      const token = localStorage.getItem(TOKEN_KEY);
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await getDashboardSummary(token);
+        setSummary(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load dashboard");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadSummary();
+  }, [router]);
+
+  const metrics = [
+    { label: "Active Projects", value: `${summary?.projectCount ?? "-"}`, trend: "Real data" },
+    { label: "Open Tasks", value: `${summary?.taskCount ?? "-"}`, trend: "All projects" },
+    { label: "Todo", value: `${summary?.byStatus.todo ?? "-"}`, trend: "Needs action" },
+    { label: "Done", value: `${summary?.byStatus.done ?? "-"}`, trend: "Delivered" },
+  ];
+
+  function handleLogout() {
+    localStorage.removeItem(TOKEN_KEY);
+    router.push("/login");
+  }
+
+  if (loading) {
+    return (
+      <main className="shell">
+        <section className="content">
+          <EmptyState title="Loading dashboard" message="Fetching your workspace summary..." />
+        </section>
+      </main>
+    );
+  }
+
+  if (error) {
+    return (
+      <main className="shell">
+        <section className="content">
+          <EmptyState title="Dashboard unavailable" message={error} />
+          <Button onClick={handleLogout}>Back to login</Button>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="shell">
       <Sidebar
@@ -70,6 +129,9 @@ export function DashboardTemplate() {
           />
           <div className="controls-action">
             <Button variant="ghost">Reset</Button>
+            <Button variant="secondary" onClick={handleLogout}>
+              Logout
+            </Button>
           </div>
         </section>
 

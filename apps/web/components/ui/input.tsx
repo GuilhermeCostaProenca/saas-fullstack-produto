@@ -7,7 +7,8 @@ type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
 };
 
 export function Input({ label, hint, error, id, className, ...props }: InputProps) {
-  const inputId = id ?? props.name ?? `input-${Math.random().toString(36).slice(2, 8)}`;
+  const generatedId = React.useId();
+  const inputId = id ?? props.name ?? generatedId;
   return (
     <label className="field" htmlFor={inputId}>
       {label ? <span className="field-label">{label}</span> : null}

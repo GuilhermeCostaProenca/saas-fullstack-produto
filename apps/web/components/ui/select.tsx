@@ -6,7 +6,8 @@ type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement> & {
 };
 
 export function Select({ label, options, id, className, ...props }: SelectProps) {
-  const selectId = id ?? props.name ?? `select-${Math.random().toString(36).slice(2, 8)}`;
+  const generatedId = React.useId();
+  const selectId = id ?? props.name ?? generatedId;
   return (
     <label className="field" htmlFor={selectId}>
       {label ? <span className="field-label">{label}</span> : null}
