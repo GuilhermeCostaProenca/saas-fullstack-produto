@@ -201,6 +201,7 @@ export async function createTask(
     description?: string;
     priority?: "LOW" | "MEDIUM" | "HIGH";
     status?: "TODO" | "DOING" | "DONE";
+    dueDate?: string;
   },
 ) {
   return request<Task>(`/projects/${projectId}/tasks`, {
@@ -220,6 +221,7 @@ export async function updateTask(
     description?: string | null;
     priority?: "LOW" | "MEDIUM" | "HIGH";
     status?: "TODO" | "DOING" | "DONE";
+    dueDate?: string | null;
   },
 ) {
   return request<Task>(`/tasks/${taskId}`, {

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
@@ -14,6 +15,7 @@ import { useSessionToken } from "../../lib/use-session-token";
 
 export default function ProjectsPage() {
   const { token, loading: authLoading, logout } = useSessionToken();
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -29,6 +31,23 @@ export default function ProjectsPage() {
   const [renameProject, setRenameProject] = useState<Project | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deletingProject, setDeletingProject] = useState<Project | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const queryPage = Number(params.get("page") ?? "1");
+    setPage(Number.isFinite(queryPage) && queryPage > 0 ? queryPage : 1);
+    setSearch(params.get("search") ?? "");
+    setArchivedFilter((params.get("archived") as "all" | "false" | "true") ?? "all");
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (archivedFilter !== "all") params.set("archived", archivedFilter);
+    if (page > 1) params.set("page", String(page));
+    const query = params.toString();
+    router.replace(`/projects${query ? `?${query}` : ""}`, { scroll: false });
+  }, [router, search, archivedFilter, page]);
 
   async function loadProjects(currentToken: string, nextPage = page) {
     setLoading(true);
@@ -52,7 +71,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     if (!token) return;
-    loadProjects(token, 1);
+    loadProjects(token, page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, search, archivedFilter]);
 

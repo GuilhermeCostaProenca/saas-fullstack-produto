@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
@@ -13,8 +14,24 @@ import { Topbar } from "../../components/ui/topbar";
 import { Project, Task, createTask, deleteTask, listTasks, listProjects, updateTask } from "../../lib/api";
 import { useSessionToken } from "../../lib/use-session-token";
 
+function toIsoFromDateInput(dateValue: string) {
+  return dateValue ? new Date(`${dateValue}T23:59:59`).toISOString() : undefined;
+}
+
+function isTaskOverdue(task: Task) {
+  if (!task.dueDate || task.status === "DONE") return false;
+  return new Date(task.dueDate).getTime() < Date.now();
+}
+
+function formatDueDate(dueDate: string | null) {
+  if (!dueDate) return "No due date";
+  return new Date(dueDate).toLocaleDateString();
+}
+
 export default function TasksPage() {
   const { token, loading: authLoading, logout } = useSessionToken();
+  const router = useRouter();
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState("");
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -22,6 +39,7 @@ export default function TasksPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<"LOW" | "MEDIUM" | "HIGH">("MEDIUM");
+  const [dueDate, setDueDate] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "TODO" | "DOING" | "DONE">("all");
   const [loading, setLoading] = useState(true);
@@ -32,6 +50,25 @@ export default function TasksPage() {
   const [renameTaskState, setRenameTaskState] = useState<Task | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deletingTaskState, setDeletingTaskState] = useState<Task | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const queryPage = Number(params.get("page") ?? "1");
+    setPage(Number.isFinite(queryPage) && queryPage > 0 ? queryPage : 1);
+    setSelectedProject(params.get("project") ?? "");
+    setSearch(params.get("search") ?? "");
+    setStatusFilter((params.get("status") as "all" | "TODO" | "DOING" | "DONE") ?? "all");
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (selectedProject) params.set("project", selectedProject);
+    if (search) params.set("search", search);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (page > 1) params.set("page", String(page));
+    const query = params.toString();
+    router.replace(`/tasks${query ? `?${query}` : ""}`, { scroll: false });
+  }, [router, selectedProject, search, statusFilter, page]);
 
   async function loadTasks(currentToken: string, projectId: string, nextPage = page) {
     try {
@@ -51,13 +88,14 @@ export default function TasksPage() {
     }
   }
 
-  async function loadProjectsAndTasks(currentToken: string, nextPage = 1) {
+  async function loadProjectsAndTasks(currentToken: string, nextPage = page) {
     setLoading(true);
     setError(null);
     try {
       const projectData = await listProjects(currentToken, { page: 1, pageSize: 100, archived: "false" });
       setProjects(projectData.items);
-      const first = selectedProject || projectData.items.find((p) => !p.archived)?.id || "";
+      const selectedExists = projectData.items.some((p) => p.id === selectedProject);
+      const first = selectedExists ? selectedProject : projectData.items.find((p) => !p.archived)?.id || "";
       setSelectedProject(first);
       if (first) {
         await loadTasks(currentToken, first, nextPage);
@@ -75,16 +113,16 @@ export default function TasksPage() {
 
   useEffect(() => {
     if (!token) return;
-    loadProjectsAndTasks(token, 1);
+    loadProjectsAndTasks(token, page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, search, statusFilter]);
 
   async function handleProjectChange(projectId: string) {
     if (!token) return;
     setSelectedProject(projectId);
+    setPage(1);
     if (!projectId) {
       setTasks([]);
-      setPage(1);
       setTotalPages(1);
       return;
     }
@@ -97,8 +135,9 @@ export default function TasksPage() {
     try {
       setSubmitting(true);
       setError(null);
-      await createTask(token, selectedProject, { title, priority });
+      await createTask(token, selectedProject, { title, priority, dueDate: toIsoFromDateInput(dueDate) });
       setTitle("");
+      setDueDate("");
       setNotice("Task created successfully.");
       await loadTasks(token, selectedProject, 1);
     } catch (err) {
@@ -123,7 +162,7 @@ export default function TasksPage() {
     }
   }
 
-  async function renameTask(task: Task) {
+  function renameTask(task: Task) {
     setRenameTaskState(task);
     setRenameValue(task.title);
   }
@@ -149,7 +188,7 @@ export default function TasksPage() {
     }
   }
 
-  async function removeTask(task: Task) {
+  function removeTask(task: Task) {
     setDeletingTaskState(task);
   }
 
@@ -221,10 +260,14 @@ export default function TasksPage() {
               />
               <Input label="Task title" value={title} onChange={(e) => setTitle(e.target.value)} required />
               <Input label="Search tasks" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Input label="Due date" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
               <Select
                 label="Status filter"
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as "all" | "TODO" | "DOING" | "DONE")}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value as "all" | "TODO" | "DOING" | "DONE");
+                  setPage(1);
+                }}
                 options={[
                   { value: "all", label: "All statuses" },
                   { value: "TODO", label: "Todo" },
@@ -348,8 +391,8 @@ function TaskColumn({
   title: string;
   items: Task[];
   onMove: (task: Task, status: Task["status"]) => Promise<void>;
-  onRename: (task: Task) => Promise<void>;
-  onDelete: (task: Task) => Promise<void>;
+  onRename: (task: Task) => void;
+  onDelete: (task: Task) => void;
   target: Task["status"];
   locked?: boolean;
   busyTaskId?: string | null;
@@ -365,10 +408,11 @@ function TaskColumn({
         {items.map((task) => (
           <div className="kanban-item" key={task.id}>
             <strong>{task.title}</strong>
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
               <Badge tone={task.priority === "HIGH" ? "danger" : task.priority === "MEDIUM" ? "warning" : "success"}>
                 {task.priority}
               </Badge>
+              <Badge tone={isTaskOverdue(task) ? "danger" : "neutral"}>{formatDueDate(task.dueDate)}</Badge>
               {!locked ? (
                 <Button size="sm" variant="ghost" onClick={() => onMove(task, target)} loading={busyTaskId === task.id}>
                   Move

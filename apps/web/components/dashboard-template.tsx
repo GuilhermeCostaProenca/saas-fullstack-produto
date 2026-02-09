@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
@@ -20,11 +21,23 @@ type DashboardTask = {
   task: string;
   status: "TODO" | "DOING" | "DONE";
   priority: "LOW" | "MEDIUM" | "HIGH";
+  dueDate: string | null;
   owner: string;
 };
 
+function formatDueDate(dueDate: string | null) {
+  if (!dueDate) return "No due date";
+  return new Date(dueDate).toLocaleDateString();
+}
+
+function isOverdue(task: DashboardTask) {
+  if (!task.dueDate || task.status === "DONE") return false;
+  return new Date(task.dueDate).getTime() < Date.now();
+}
+
 export function DashboardTemplate() {
   const { token, loading: authLoading, logout } = useSessionToken();
+  const router = useRouter();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [tasks, setTasks] = useState<DashboardTask[]>([]);
   const [page, setPage] = useState(1);
@@ -40,6 +53,25 @@ export function DashboardTemplate() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [taskToDelete, setTaskToDelete] = useState<DashboardTask | null>(null);
   const hasLoadedOnce = useRef(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const queryPage = Number(params.get("page") ?? "1");
+    setPage(Number.isFinite(queryPage) && queryPage > 0 ? queryPage : 1);
+    setSearch(params.get("search") ?? "");
+    setStatusFilter((params.get("status") as "all" | "TODO" | "DOING" | "DONE") ?? "all");
+    setPriorityFilter((params.get("priority") as "all" | "LOW" | "MEDIUM" | "HIGH") ?? "all");
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (priorityFilter !== "all") params.set("priority", priorityFilter);
+    if (page > 1) params.set("page", String(page));
+    const query = params.toString();
+    router.replace(`/${query ? `?${query}` : ""}`, { scroll: false });
+  }, [router, search, statusFilter, priorityFilter, page]);
 
   useEffect(() => {
     async function loadSummary() {
@@ -61,13 +93,14 @@ export function DashboardTemplate() {
         ]);
 
         const rows: DashboardTask[] = taskPage.items.map((task) => ({
-            id: task.id,
-            project: task.project.name,
-            task: task.title,
-            status: task.status,
-            priority: task.priority,
-            owner: "You",
-          }));
+          id: task.id,
+          project: task.project.name,
+          task: task.title,
+          status: task.status,
+          priority: task.priority,
+          dueDate: task.dueDate,
+          owner: "You",
+        }));
 
         setSummary(data);
         setTasks(rows);
@@ -288,6 +321,11 @@ export function DashboardTemplate() {
                   {row.priority}
                 </Badge>
               ),
+            },
+            {
+              key: "dueDate",
+              title: "Due",
+              render: (row) => <Badge tone={isOverdue(row) ? "danger" : "neutral"}>{formatDueDate(row.dueDate)}</Badge>,
             },
             {
               key: "actions",
