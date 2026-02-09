@@ -8,7 +8,7 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { Input } from "../../components/ui/input";
 import { Sidebar } from "../../components/ui/sidebar";
 import { Topbar } from "../../components/ui/topbar";
-import { Project, createProject, listProjects, updateProject } from "../../lib/api";
+import { Project, createProject, deleteProject, listProjects, updateProject } from "../../lib/api";
 import { useSessionToken } from "../../lib/use-session-token";
 
 export default function ProjectsPage() {
@@ -53,6 +53,21 @@ export default function ProjectsPage() {
   async function handleArchive(project: Project) {
     if (!token) return;
     await updateProject(token, project.id, { archived: !project.archived });
+    await loadProjects(token);
+  }
+
+  async function handleRename(project: Project) {
+    if (!token) return;
+    const nextName = window.prompt("New project name", project.name);
+    if (!nextName || nextName.trim().length < 2) return;
+    await updateProject(token, project.id, { name: nextName.trim() });
+    await loadProjects(token);
+  }
+
+  async function handleDelete(project: Project) {
+    if (!token) return;
+    if (!window.confirm(`Delete project '${project.name}' and all tasks?`)) return;
+    await deleteProject(token, project.id);
     await loadProjects(token);
   }
 
@@ -120,8 +135,14 @@ export default function ProjectsPage() {
                   <p className="card-description">{project.description || "No description"}</p>
                   <div className="controls-action" style={{ marginTop: 12 }}>
                     <Badge tone={project.archived ? "warning" : "success"}>{project.archived ? "Archived" : "Active"}</Badge>
+                    <Button size="sm" variant="ghost" onClick={() => handleRename(project)}>
+                      Rename
+                    </Button>
                     <Button size="sm" variant="ghost" onClick={() => handleArchive(project)}>
                       {project.archived ? "Restore" : "Archive"}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => handleDelete(project)}>
+                      Delete
                     </Button>
                   </div>
                 </CardContent>

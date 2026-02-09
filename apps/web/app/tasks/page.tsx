@@ -9,7 +9,7 @@ import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { Sidebar } from "../../components/ui/sidebar";
 import { Topbar } from "../../components/ui/topbar";
-import { Project, Task, createTask, listProjectTasks, listProjects, updateTask } from "../../lib/api";
+import { Project, Task, createTask, deleteTask, listProjectTasks, listProjects, updateTask } from "../../lib/api";
 import { useSessionToken } from "../../lib/use-session-token";
 
 export default function TasksPage() {
@@ -72,6 +72,23 @@ export default function TasksPage() {
   async function moveStatus(task: Task, status: Task["status"]) {
     if (!token) return;
     await updateTask(token, task.id, { status });
+    const taskData = await listProjectTasks(token, selectedProject);
+    setTasks(taskData);
+  }
+
+  async function renameTask(task: Task) {
+    if (!token) return;
+    const nextTitle = window.prompt("New task title", task.title);
+    if (!nextTitle || nextTitle.trim().length < 2) return;
+    await updateTask(token, task.id, { title: nextTitle.trim() });
+    const taskData = await listProjectTasks(token, selectedProject);
+    setTasks(taskData);
+  }
+
+  async function removeTask(task: Task) {
+    if (!token) return;
+    if (!window.confirm(`Delete task '${task.title}'?`)) return;
+    await deleteTask(token, task.id);
     const taskData = await listProjectTasks(token, selectedProject);
     setTasks(taskData);
   }
@@ -151,9 +168,9 @@ export default function TasksPage() {
         </Card>
 
         <section className="kanban-grid">
-          <TaskColumn title="Todo" items={grouped.todo} onMove={moveStatus} target="DOING" />
-          <TaskColumn title="Doing" items={grouped.doing} onMove={moveStatus} target="DONE" />
-          <TaskColumn title="Done" items={grouped.done} onMove={moveStatus} target="DONE" locked />
+          <TaskColumn title="Todo" items={grouped.todo} onMove={moveStatus} onRename={renameTask} onDelete={removeTask} target="DOING" />
+          <TaskColumn title="Doing" items={grouped.doing} onMove={moveStatus} onRename={renameTask} onDelete={removeTask} target="DONE" />
+          <TaskColumn title="Done" items={grouped.done} onMove={moveStatus} onRename={renameTask} onDelete={removeTask} target="DONE" locked />
         </section>
       </section>
     </main>
@@ -164,12 +181,16 @@ function TaskColumn({
   title,
   items,
   onMove,
+  onRename,
+  onDelete,
   target,
   locked = false,
 }: {
   title: string;
   items: Task[];
   onMove: (task: Task, status: Task["status"]) => Promise<void>;
+  onRename: (task: Task) => Promise<void>;
+  onDelete: (task: Task) => Promise<void>;
   target: Task["status"];
   locked?: boolean;
 }) {
@@ -193,6 +214,12 @@ function TaskColumn({
                   Move
                 </Button>
               ) : null}
+              <Button size="sm" variant="ghost" onClick={() => onRename(task)}>
+                Rename
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => onDelete(task)}>
+                Delete
+              </Button>
             </div>
           </div>
         ))}

@@ -10,26 +10,25 @@ import { Select } from "./ui/select";
 import { Sidebar } from "./ui/sidebar";
 import { DataTable } from "./ui/table";
 import { Topbar } from "./ui/topbar";
-import { DashboardSummary, getDashboardSummary } from "../lib/api";
+import { DashboardSummary, Task, getDashboardSummary, listProjectTasks, listProjects } from "../lib/api";
 import { useSessionToken } from "../lib/use-session-token";
 
-const queue = [
-  { project: "Atlas CRM", task: "Implement billing webhooks", status: "Doing", owner: "You", risk: "Low" },
-  { project: "Nimbus Docs", task: "Refactor auth middleware", status: "Review", owner: "Ana", risk: "Medium" },
-  { project: "Helix API", task: "Stabilize rate limiter", status: "Todo", owner: "Leo", risk: "High" },
-  { project: "Pulse Ops", task: "Dashboard conversion tracking", status: "Done", owner: "You", risk: "Low" },
-];
-type QueueItem = (typeof queue)[number];
-
-const board = {
-  todo: ["Define workspace onboarding", "Map recurring task templates"],
-  doing: ["Auth flows end-to-end", "Dashboard API contracts"],
-  done: ["Foundation tokens", "CI baseline checks"],
+type DashboardTask = {
+  id: string;
+  project: string;
+  task: string;
+  status: "TODO" | "DOING" | "DONE";
+  priority: "LOW" | "MEDIUM" | "HIGH";
+  owner: string;
 };
 
 export function DashboardTemplate() {
   const { token, loading: authLoading, logout } = useSessionToken();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [tasks, setTasks] = useState<DashboardTask[]>([]);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "TODO" | "DOING" | "DONE">("all");
+  const [priorityFilter, setPriorityFilter] = useState<"all" | "LOW" | "MEDIUM" | "HIGH">("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,8 +39,23 @@ export function DashboardTemplate() {
       setLoading(true);
       setError(null);
       try {
-        const data = await getDashboardSummary(token);
+        const [data, projects] = await Promise.all([getDashboardSummary(token), listProjects(token)]);
+        const activeProjects = projects.filter((project) => !project.archived);
+        const taskGroups = await Promise.all(activeProjects.map((project) => listProjectTasks(token, project.id)));
+
+        const rows: DashboardTask[] = activeProjects.flatMap((project, index) =>
+          taskGroups[index].map((task: Task) => ({
+            id: task.id,
+            project: project.name,
+            task: task.title,
+            status: task.status,
+            priority: task.priority,
+            owner: "You",
+          })),
+        );
+
         setSummary(data);
+        setTasks(rows);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load dashboard");
       } finally {
@@ -58,6 +72,22 @@ export function DashboardTemplate() {
     { label: "Todo", value: `${summary?.byStatus.todo ?? "-"}`, trend: "Needs action" },
     { label: "Done", value: `${summary?.byStatus.done ?? "-"}`, trend: "Delivered" },
   ];
+
+  const filteredTasks = tasks.filter((row) => {
+    const matchSearch =
+      search.trim().length === 0 ||
+      row.project.toLowerCase().includes(search.toLowerCase()) ||
+      row.task.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = statusFilter === "all" || row.status === statusFilter;
+    const matchPriority = priorityFilter === "all" || row.priority === priorityFilter;
+    return matchSearch && matchStatus && matchPriority;
+  });
+
+  const board = {
+    todo: filteredTasks.filter((row) => row.status === "TODO"),
+    doing: filteredTasks.filter((row) => row.status === "DOING"),
+    done: filteredTasks.filter((row) => row.status === "DONE"),
+  };
 
   if (authLoading || loading) {
     return (
@@ -96,29 +126,40 @@ export function DashboardTemplate() {
         <Topbar />
 
         <section className="controls card">
-          <Input label="Search" placeholder="Search project or task" />
+          <Input label="Search" placeholder="Search project or task" value={search} onChange={(e) => setSearch(e.target.value)} />
           <Select
             label="Status"
-            defaultValue="all"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as "all" | "TODO" | "DOING" | "DONE")}
             options={[
               { value: "all", label: "All statuses" },
-              { value: "todo", label: "Todo" },
-              { value: "doing", label: "Doing" },
-              { value: "done", label: "Done" },
+              { value: "TODO", label: "Todo" },
+              { value: "DOING", label: "Doing" },
+              { value: "DONE", label: "Done" },
             ]}
           />
           <Select
             label="Priority"
-            defaultValue="all"
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value as "all" | "LOW" | "MEDIUM" | "HIGH")}
             options={[
               { value: "all", label: "All priorities" },
-              { value: "high", label: "High" },
-              { value: "medium", label: "Medium" },
-              { value: "low", label: "Low" },
+              { value: "HIGH", label: "High" },
+              { value: "MEDIUM", label: "Medium" },
+              { value: "LOW", label: "Low" },
             ]}
           />
           <div className="controls-action">
-            <Button variant="ghost">Reset</Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setSearch("");
+                setStatusFilter("all");
+                setPriorityFilter("all");
+              }}
+            >
+              Reset
+            </Button>
             <Button variant="secondary" onClick={logout}>
               Logout
             </Button>
@@ -139,10 +180,10 @@ export function DashboardTemplate() {
           ))}
         </section>
 
-        <DataTable<QueueItem>
+        <DataTable<DashboardTask>
           title="Execution Queue"
-          subtitle="Critical cross-team tasks for today"
-          rows={queue}
+          subtitle={`${filteredTasks.length} tasks matched your filters`}
+          rows={filteredTasks}
           columns={[
             { key: "project", title: "Project", render: (row) => row.project },
             { key: "task", title: "Task", render: (row) => row.task },
@@ -150,17 +191,19 @@ export function DashboardTemplate() {
               key: "status",
               title: "Status",
               render: (row) => (
-                <Badge tone={row.status === "Done" ? "success" : row.status === "Doing" ? "warning" : "neutral"}>
+                <Badge tone={row.status === "DONE" ? "success" : row.status === "DOING" ? "warning" : "neutral"}>
                   {row.status}
                 </Badge>
               ),
             },
             { key: "owner", title: "Owner", render: (row) => row.owner },
             {
-              key: "risk",
-              title: "Risk",
+              key: "priority",
+              title: "Priority",
               render: (row) => (
-                <Badge tone={row.risk === "High" ? "danger" : row.risk === "Medium" ? "warning" : "success"}>{row.risk}</Badge>
+                <Badge tone={row.priority === "HIGH" ? "danger" : row.priority === "MEDIUM" ? "warning" : "success"}>
+                  {row.priority}
+                </Badge>
               ),
             },
           ]}
@@ -173,7 +216,9 @@ export function DashboardTemplate() {
             </CardHeader>
             <CardContent>
               {board.todo.map((task) => (
-                <p className="kanban-item" key={task}>{task}</p>
+                <p className="kanban-item" key={task.id}>
+                  {task.task}
+                </p>
               ))}
             </CardContent>
           </Card>
@@ -183,7 +228,9 @@ export function DashboardTemplate() {
             </CardHeader>
             <CardContent>
               {board.doing.map((task) => (
-                <p className="kanban-item" key={task}>{task}</p>
+                <p className="kanban-item" key={task.id}>
+                  {task.task}
+                </p>
               ))}
             </CardContent>
           </Card>
@@ -193,7 +240,9 @@ export function DashboardTemplate() {
             </CardHeader>
             <CardContent>
               {board.done.map((task) => (
-                <p className="kanban-item" key={task}>{task}</p>
+                <p className="kanban-item" key={task.id}>
+                  {task.task}
+                </p>
               ))}
             </CardContent>
           </Card>

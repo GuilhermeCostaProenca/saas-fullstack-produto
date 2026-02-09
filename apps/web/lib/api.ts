@@ -52,6 +52,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(data?.message ?? "Request failed");
   }
 
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return response.json() as Promise<T>;
 }
 
@@ -121,6 +125,15 @@ export async function updateProject(
   });
 }
 
+export async function deleteProject(token: string, projectId: string) {
+  return request<void>(`/projects/${projectId}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
 export async function listProjectTasks(token: string, projectId: string) {
   return request<Task[]>(`/projects/${projectId}/tasks`, {
     method: "GET",
@@ -165,6 +178,15 @@ export async function updateTask(
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteTask(token: string, taskId: string) {
+  return request<void>(`/tasks/${taskId}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
   });
 }
 

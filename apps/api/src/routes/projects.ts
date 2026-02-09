@@ -31,6 +31,16 @@ export async function projectRoutes(app: FastifyInstance) {
     return updated;
   });
 
+  app.delete("/projects/:id", { preHandler: [authenticate] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const userId = request.user.sub as string;
+    const project = await prisma.project.findFirst({ where: { id, userId } });
+    if (!project) return reply.code(404).send({ message: "Project not found" });
+
+    await prisma.project.delete({ where: { id } });
+    return reply.code(204).send();
+  });
+
   app.get("/projects/:id/tasks", { preHandler: [authenticate] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const userId = request.user.sub as string;
@@ -79,5 +89,15 @@ export async function projectRoutes(app: FastifyInstance) {
     });
 
     return updated;
+  });
+
+  app.delete("/tasks/:id", { preHandler: [authenticate] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const userId = request.user.sub as string;
+    const task = await prisma.task.findFirst({ where: { id }, include: { project: true } });
+    if (!task || task.project.userId !== userId) return reply.code(404).send({ message: "Task not found" });
+
+    await prisma.task.delete({ where: { id } });
+    return reply.code(204).send();
   });
 }
