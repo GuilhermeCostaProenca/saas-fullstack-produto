@@ -373,6 +373,52 @@ th {
   color: var(--text-muted);
 }
 
+.empty-state-action {
+  display: inline-flex;
+  margin-top: 10px;
+  text-decoration: none;
+  color: var(--brand-600);
+  font-weight: 700;
+}
+
+.flash {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+
+.flash-success {
+  background: #def8ef;
+  border: 1px solid #b7ebda;
+  color: #0c6c52;
+}
+
+.flash-error {
+  background: #ffeaea;
+  border: 1px solid #f7c8cc;
+  color: #93232c;
+}
+
+.table-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 20px 10px;
+}
+
+.table-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.toolbar-inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .auth-layout {
   min-height: 100vh;
   display: grid;

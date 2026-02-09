@@ -22,6 +22,9 @@ export default function ProjectsPage() {
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [busyProjectId, setBusyProjectId] = useState<string | null>(null);
 
   async function loadProjects(currentToken: string, nextPage = page) {
     setLoading(true);
@@ -53,34 +56,66 @@ export default function ProjectsPage() {
     event.preventDefault();
     if (!token) return;
     try {
+      setCreating(true);
+      setError(null);
       await createProject(token, { name, description });
       setName("");
       setDescription("");
+      setNotice("Project created successfully.");
       await loadProjects(token, 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create project");
+    } finally {
+      setCreating(false);
     }
   }
 
   async function handleArchive(project: Project) {
     if (!token) return;
-    await updateProject(token, project.id, { archived: !project.archived });
-    await loadProjects(token);
+    try {
+      setBusyProjectId(project.id);
+      setError(null);
+      await updateProject(token, project.id, { archived: !project.archived });
+      setNotice(project.archived ? "Project restored." : "Project archived.");
+      await loadProjects(token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update project");
+    } finally {
+      setBusyProjectId(null);
+    }
   }
 
   async function handleRename(project: Project) {
     if (!token) return;
     const nextName = window.prompt("New project name", project.name);
     if (!nextName || nextName.trim().length < 2) return;
-    await updateProject(token, project.id, { name: nextName.trim() });
-    await loadProjects(token);
+    try {
+      setBusyProjectId(project.id);
+      setError(null);
+      await updateProject(token, project.id, { name: nextName.trim() });
+      setNotice("Project renamed.");
+      await loadProjects(token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to rename project");
+    } finally {
+      setBusyProjectId(null);
+    }
   }
 
   async function handleDelete(project: Project) {
     if (!token) return;
     if (!window.confirm(`Delete project '${project.name}' and all tasks?`)) return;
-    await deleteProject(token, project.id);
-    await loadProjects(token);
+    try {
+      setBusyProjectId(project.id);
+      setError(null);
+      await deleteProject(token, project.id);
+      setNotice("Project deleted.");
+      await loadProjects(token, 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete project");
+    } finally {
+      setBusyProjectId(null);
+    }
   }
 
   if (authLoading || loading) {
@@ -123,7 +158,9 @@ export default function ProjectsPage() {
                 placeholder="Short context"
               />
               <div className="controls-action">
-                <Button type="submit">Create</Button>
+                <Button type="submit" loading={creating}>
+                  Create
+                </Button>
                 <Button type="button" variant="secondary" onClick={logout}>
                   Logout
                 </Button>
@@ -141,12 +178,18 @@ export default function ProjectsPage() {
                 <option value="true">Archived only</option>
               </select>
             </div>
-            {error ? <p className="auth-error">{error}</p> : null}
+            {notice ? <p className="flash flash-success">{notice}</p> : null}
+            {error ? <p className="flash flash-error">{error}</p> : null}
           </CardContent>
         </Card>
 
         {projects.length === 0 ? (
-          <EmptyState title="No projects yet" message="Create your first project to start tracking tasks." />
+          <EmptyState
+            title="No projects yet"
+            message="Create your first project to start tracking tasks."
+            actionLabel="Open tasks page"
+            actionHref="/tasks"
+          />
         ) : (
           <section className="stats-grid">
             {projects.map((project) => (
@@ -162,10 +205,10 @@ export default function ProjectsPage() {
                     <Button size="sm" variant="ghost" onClick={() => handleRename(project)}>
                       Rename
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => handleArchive(project)}>
+                    <Button size="sm" variant="ghost" onClick={() => handleArchive(project)} loading={busyProjectId === project.id}>
                       {project.archived ? "Restore" : "Archive"}
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => handleDelete(project)}>
+                    <Button size="sm" variant="ghost" onClick={() => handleDelete(project)} loading={busyProjectId === project.id}>
                       Delete
                     </Button>
                   </div>

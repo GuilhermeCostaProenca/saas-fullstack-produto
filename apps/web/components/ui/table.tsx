@@ -11,11 +11,13 @@ export function DataTable<T>({
   subtitle,
   columns,
   rows,
+  emptyMessage = "No data found.",
 }: {
   title: string;
   subtitle?: string;
   columns: Array<Column<T>>;
   rows: T[];
+  emptyMessage?: string;
 }) {
   return (
     <section className="table-wrap card">
@@ -34,13 +36,21 @@ export function DataTable<T>({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, index) => (
-            <tr key={index}>
-              {columns.map((column) => (
-                <td key={column.key}>{column.render(row)}</td>
-              ))}
+          {rows.length === 0 ? (
+            <tr>
+              <td className="table-empty" colSpan={columns.length}>
+                {emptyMessage}
+              </td>
             </tr>
-          ))}
+          ) : (
+            rows.map((row, index) => (
+              <tr key={index}>
+                {columns.map((column) => (
+                  <td key={column.key}>{column.render(row)}</td>
+                ))}
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </section>

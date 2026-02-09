@@ -22,19 +22,29 @@ export default function TasksPage() {
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<"LOW" | "MEDIUM" | "HIGH">("MEDIUM");
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "TODO" | "DOING" | "DONE">("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
 
   async function loadTasks(currentToken: string, projectId: string, nextPage = page) {
-    const taskData = await listTasks(currentToken, {
-      projectId: projectId || undefined,
-      page: nextPage,
-      pageSize: 24,
-      search,
-    });
-    setTasks(taskData.items);
-    setPage(taskData.page);
-    setTotalPages(taskData.totalPages);
+    try {
+      setError(null);
+      const taskData = await listTasks(currentToken, {
+        projectId: projectId || undefined,
+        page: nextPage,
+        pageSize: 24,
+        search,
+        status: statusFilter === "all" ? undefined : statusFilter,
+      });
+      setTasks(taskData.items);
+      setPage(taskData.page);
+      setTotalPages(taskData.totalPages);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load tasks");
+    }
   }
 
   async function loadProjectsAndTasks(currentToken: string, nextPage = 1) {
@@ -63,7 +73,7 @@ export default function TasksPage() {
     if (!token) return;
     loadProjectsAndTasks(token, 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, search]);
+  }, [token, search, statusFilter]);
 
   async function handleProjectChange(projectId: string) {
     if (!token) return;
@@ -80,30 +90,66 @@ export default function TasksPage() {
   async function handleCreateTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token || !selectedProject) return;
-    await createTask(token, selectedProject, { title, priority });
-    setTitle("");
-    await loadTasks(token, selectedProject, 1);
+    try {
+      setSubmitting(true);
+      setError(null);
+      await createTask(token, selectedProject, { title, priority });
+      setTitle("");
+      setNotice("Task created successfully.");
+      await loadTasks(token, selectedProject, 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create task");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function moveStatus(task: Task, status: Task["status"]) {
     if (!token) return;
-    await updateTask(token, task.id, { status });
-    await loadTasks(token, selectedProject);
+    try {
+      setBusyTaskId(task.id);
+      setError(null);
+      await updateTask(token, task.id, { status });
+      setNotice(`Task moved to ${status}.`);
+      await loadTasks(token, selectedProject);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update task");
+    } finally {
+      setBusyTaskId(null);
+    }
   }
 
   async function renameTask(task: Task) {
     if (!token) return;
     const nextTitle = window.prompt("New task title", task.title);
     if (!nextTitle || nextTitle.trim().length < 2) return;
-    await updateTask(token, task.id, { title: nextTitle.trim() });
-    await loadTasks(token, selectedProject);
+    try {
+      setBusyTaskId(task.id);
+      setError(null);
+      await updateTask(token, task.id, { title: nextTitle.trim() });
+      setNotice("Task renamed.");
+      await loadTasks(token, selectedProject);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to rename task");
+    } finally {
+      setBusyTaskId(null);
+    }
   }
 
   async function removeTask(task: Task) {
     if (!token) return;
     if (!window.confirm(`Delete task '${task.title}'?`)) return;
-    await deleteTask(token, task.id);
-    await loadTasks(token, selectedProject);
+    try {
+      setBusyTaskId(task.id);
+      setError(null);
+      await deleteTask(token, task.id);
+      setNotice("Task deleted.");
+      await loadTasks(token, selectedProject, 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete task");
+    } finally {
+      setBusyTaskId(null);
+    }
   }
 
   const grouped = useMemo(
@@ -159,6 +205,17 @@ export default function TasksPage() {
               <Input label="Task title" value={title} onChange={(e) => setTitle(e.target.value)} required />
               <Input label="Search tasks" value={search} onChange={(e) => setSearch(e.target.value)} />
               <Select
+                label="Status filter"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as "all" | "TODO" | "DOING" | "DONE")}
+                options={[
+                  { value: "all", label: "All statuses" },
+                  { value: "TODO", label: "Todo" },
+                  { value: "DOING", label: "Doing" },
+                  { value: "DONE", label: "Done" },
+                ]}
+              />
+              <Select
                 label="Priority"
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as "LOW" | "MEDIUM" | "HIGH")}
@@ -169,7 +226,7 @@ export default function TasksPage() {
                 ]}
               />
               <div className="controls-action">
-                <Button type="submit" disabled={!selectedProject}>
+                <Button type="submit" disabled={!selectedProject} loading={submitting}>
                   Create task
                 </Button>
                 <Button type="button" variant="secondary" onClick={logout}>
@@ -177,15 +234,50 @@ export default function TasksPage() {
                 </Button>
               </div>
             </form>
-            {error ? <p className="auth-error">{error}</p> : null}
+            {notice ? <p className="flash flash-success">{notice}</p> : null}
+            {error ? <p className="flash flash-error">{error}</p> : null}
           </CardContent>
         </Card>
 
-        <section className="kanban-grid">
-          <TaskColumn title="Todo" items={grouped.todo} onMove={moveStatus} onRename={renameTask} onDelete={removeTask} target="DOING" />
-          <TaskColumn title="Doing" items={grouped.doing} onMove={moveStatus} onRename={renameTask} onDelete={removeTask} target="DONE" />
-          <TaskColumn title="Done" items={grouped.done} onMove={moveStatus} onRename={renameTask} onDelete={removeTask} target="DONE" locked />
-        </section>
+        {tasks.length === 0 ? (
+          <EmptyState
+            title="No tasks found"
+            message="Create your first task or adjust filters."
+            actionLabel="Go to projects"
+            actionHref="/projects"
+          />
+        ) : (
+          <section className="kanban-grid">
+            <TaskColumn
+              title="Todo"
+              items={grouped.todo}
+              onMove={moveStatus}
+              onRename={renameTask}
+              onDelete={removeTask}
+              target="DOING"
+              busyTaskId={busyTaskId}
+            />
+            <TaskColumn
+              title="Doing"
+              items={grouped.doing}
+              onMove={moveStatus}
+              onRename={renameTask}
+              onDelete={removeTask}
+              target="DONE"
+              busyTaskId={busyTaskId}
+            />
+            <TaskColumn
+              title="Done"
+              items={grouped.done}
+              onMove={moveStatus}
+              onRename={renameTask}
+              onDelete={removeTask}
+              target="DONE"
+              locked
+              busyTaskId={busyTaskId}
+            />
+          </section>
+        )}
         <div className="controls-action">
           <Button variant="ghost" onClick={() => token && loadTasks(token, selectedProject, Math.max(1, page - 1))} disabled={page <= 1}>
             Previous
@@ -214,6 +306,7 @@ function TaskColumn({
   onDelete,
   target,
   locked = false,
+  busyTaskId,
 }: {
   title: string;
   items: Task[];
@@ -222,6 +315,7 @@ function TaskColumn({
   onDelete: (task: Task) => Promise<void>;
   target: Task["status"];
   locked?: boolean;
+  busyTaskId?: string | null;
 }) {
   return (
     <Card>
@@ -239,14 +333,14 @@ function TaskColumn({
                 {task.priority}
               </Badge>
               {!locked ? (
-                <Button size="sm" variant="ghost" onClick={() => onMove(task, target)}>
+                <Button size="sm" variant="ghost" onClick={() => onMove(task, target)} loading={busyTaskId === task.id}>
                   Move
                 </Button>
               ) : null}
               <Button size="sm" variant="ghost" onClick={() => onRename(task)}>
                 Rename
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => onDelete(task)}>
+              <Button size="sm" variant="ghost" onClick={() => onDelete(task)} loading={busyTaskId === task.id}>
                 Delete
               </Button>
             </div>

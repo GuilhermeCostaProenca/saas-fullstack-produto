@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
@@ -10,7 +10,7 @@ import { Select } from "./ui/select";
 import { Sidebar } from "./ui/sidebar";
 import { DataTable } from "./ui/table";
 import { Topbar } from "./ui/topbar";
-import { DashboardSummary, getDashboardSummary, listTasks } from "../lib/api";
+import { DashboardSummary, deleteTask, getDashboardSummary, listTasks, updateTask } from "../lib/api";
 import { useSessionToken } from "../lib/use-session-token";
 
 type DashboardTask = {
@@ -32,13 +32,19 @@ export function DashboardTemplate() {
   const [statusFilter, setStatusFilter] = useState<"all" | "TODO" | "DOING" | "DONE">("all");
   const [priorityFilter, setPriorityFilter] = useState<"all" | "LOW" | "MEDIUM" | "HIGH">("all");
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const hasLoadedOnce = useRef(false);
 
   useEffect(() => {
     async function loadSummary() {
       if (!token) return;
 
-      setLoading(true);
+      if (!hasLoadedOnce.current) setLoading(true);
+      else setRefreshing(true);
       setError(null);
       try {
         const [data, taskPage] = await Promise.all([
@@ -64,21 +70,59 @@ export function DashboardTemplate() {
         setSummary(data);
         setTasks(rows);
         setTotalPages(taskPage.totalPages);
+        hasLoadedOnce.current = true;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load dashboard");
       } finally {
         setLoading(false);
+        setRefreshing(false);
       }
     }
 
     loadSummary();
-  }, [token, page, search, statusFilter, priorityFilter]);
+  }, [token, page, search, statusFilter, priorityFilter, refreshTick]);
+
+  async function handleAdvance(task: DashboardTask) {
+    if (!token) return;
+    const nextStatus = task.status === "TODO" ? "DOING" : task.status === "DOING" ? "DONE" : "DONE";
+    if (task.status === "DONE") return;
+    try {
+      setBusyTaskId(task.id);
+      await updateTask(token, task.id, { status: nextStatus });
+      setNotice(`Task moved to ${nextStatus}.`);
+      setRefreshTick((value) => value + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update task");
+    } finally {
+      setBusyTaskId(null);
+    }
+  }
+
+  async function handleDelete(task: DashboardTask) {
+    if (!token) return;
+    if (!window.confirm(`Delete task '${task.task}'?`)) return;
+    try {
+      setBusyTaskId(task.id);
+      await deleteTask(token, task.id);
+      setNotice("Task deleted.");
+      setRefreshTick((value) => value + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete task");
+    } finally {
+      setBusyTaskId(null);
+    }
+  }
+
+  const doneRate =
+    summary && summary.taskCount > 0 ? `${Math.round((summary.byStatus.done / summary.taskCount) * 100)}%` : "-";
+  const doingRate =
+    summary && summary.taskCount > 0 ? `${Math.round((summary.byStatus.doing / summary.taskCount) * 100)}%` : "-";
 
   const metrics = [
     { label: "Active Projects", value: `${summary?.projectCount ?? "-"}`, trend: "Real data" },
     { label: "Open Tasks", value: `${summary?.taskCount ?? "-"}`, trend: "All projects" },
-    { label: "Todo", value: `${summary?.byStatus.todo ?? "-"}`, trend: "Needs action" },
-    { label: "Done", value: `${summary?.byStatus.done ?? "-"}`, trend: "Delivered" },
+    { label: "Execution In Progress", value: doingRate, trend: "Doing / total" },
+    { label: "Completion Rate", value: doneRate, trend: "Done / total" },
   ];
 
   const board = {
@@ -97,7 +141,7 @@ export function DashboardTemplate() {
     );
   }
 
-  if (error) {
+  if (error && !summary) {
     return (
       <main className="shell">
         <section className="content">
@@ -162,6 +206,7 @@ export function DashboardTemplate() {
             ]}
           />
           <div className="controls-action">
+            {refreshing ? <Badge tone="neutral">Refreshing...</Badge> : null}
             <Button
               variant="ghost"
               onClick={() => {
@@ -178,6 +223,8 @@ export function DashboardTemplate() {
             </Button>
           </div>
         </section>
+        {notice ? <p className="flash flash-success">{notice}</p> : null}
+        {error ? <p className="flash flash-error">{error}</p> : null}
 
         <section className="stats-grid">
           {metrics.map((item) => (
@@ -195,8 +242,9 @@ export function DashboardTemplate() {
 
         <DataTable<DashboardTask>
           title="Execution Queue"
-          subtitle={`Page ${page} with server-side filters`}
+          subtitle={`Page ${page} with server-side filters and quick actions`}
           rows={tasks}
+          emptyMessage="No tasks match the selected filters."
           columns={[
             { key: "project", title: "Project", render: (row) => row.project },
             { key: "task", title: "Task", render: (row) => row.task },
@@ -217,6 +265,22 @@ export function DashboardTemplate() {
                 <Badge tone={row.priority === "HIGH" ? "danger" : row.priority === "MEDIUM" ? "warning" : "success"}>
                   {row.priority}
                 </Badge>
+              ),
+            },
+            {
+              key: "actions",
+              title: "Actions",
+              render: (row) => (
+                <div className="table-actions">
+                  {row.status !== "DONE" ? (
+                    <Button size="sm" variant="ghost" onClick={() => handleAdvance(row)} loading={busyTaskId === row.id}>
+                      Advance
+                    </Button>
+                  ) : null}
+                  <Button size="sm" variant="ghost" onClick={() => handleDelete(row)} loading={busyTaskId === row.id}>
+                    Delete
+                  </Button>
+                </div>
               ),
             },
           ]}
@@ -271,11 +335,6 @@ export function DashboardTemplate() {
             Next
           </Button>
         </div>
-
-        <EmptyState
-          title="Server-side filters enabled"
-          message="Search, status, priority and pagination now run in the backend."
-        />
       </section>
     </main>
   );
