@@ -1,5 +1,5 @@
-import { existsSync, copyFileSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { existsSync, copyFileSync, rmSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
 
@@ -13,6 +13,7 @@ const options = {
   skipInstall: args.has("--skip-install"),
   skipDocker: args.has("--skip-docker"),
   skipMigrate: args.has("--skip-migrate"),
+  forceGenerate: args.has("--force-generate"),
 };
 
 function log(step, message) {
@@ -94,10 +95,39 @@ async function prepare() {
   }
 
   if (!options.skipMigrate) {
-    log("prisma", "running generate");
-    await run(npmCmd, ["run", "prisma:generate"], { cwd: apiDir });
+    const generatedClient = path.join(apiDir, "node_modules", ".prisma", "client", "index.js");
+    if (options.forceGenerate || !existsSync(generatedClient)) {
+      log("prisma", "running generate");
+      await runWithRetry(npmCmd, ["run", "prisma:generate"], { cwd: apiDir, attempts: 3, waitMs: 1500 });
+    } else {
+      log("prisma", "generate skipped (client already present)");
+    }
     log("prisma", "applying migrations");
     await runWithRetry(npmCmd, ["run", "prisma:deploy"], { cwd: apiDir, attempts: 8, waitMs: 2000 });
+  }
+}
+
+function cleanupNextCache() {
+  const nextDir = path.join(rootDir, "apps", "web", ".next");
+  if (!existsSync(nextDir)) return;
+
+  try {
+    rmSync(nextDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+    log("web", "cleaned .next cache");
+    return;
+  } catch (_error) {
+    log("web", "failed to clean .next with fs.rm, trying fallback");
+  }
+
+  if (process.platform === "win32") {
+    // Fallback for OneDrive/Windows reparse point edge cases.
+    const out = spawnSync("cmd.exe", ["/c", "rmdir", "/s", "/q", nextDir], {
+      cwd: rootDir,
+      env: process.env,
+      stdio: "pipe",
+      shell: false,
+    });
+    if (out.status === 0) log("web", "cleaned .next cache (fallback)");
   }
 }
 
@@ -140,6 +170,7 @@ function startDevServers() {
 async function main() {
   log("setup", "preparing environment");
   await prepare();
+  cleanupNextCache();
 
   if (options.prepareOnly) {
     log("setup", "environment ready");
