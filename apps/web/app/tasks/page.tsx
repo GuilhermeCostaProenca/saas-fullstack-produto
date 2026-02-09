@@ -6,6 +6,7 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Input } from "../../components/ui/input";
+import { Modal } from "../../components/ui/modal";
 import { Select } from "../../components/ui/select";
 import { Sidebar } from "../../components/ui/sidebar";
 import { Topbar } from "../../components/ui/topbar";
@@ -28,6 +29,9 @@ export default function TasksPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
+  const [renameTaskState, setRenameTaskState] = useState<Task | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [deletingTaskState, setDeletingTaskState] = useState<Task | null>(null);
 
   async function loadTasks(currentToken: string, projectId: string, nextPage = page) {
     try {
@@ -120,15 +124,24 @@ export default function TasksPage() {
   }
 
   async function renameTask(task: Task) {
-    if (!token) return;
-    const nextTitle = window.prompt("New task title", task.title);
-    if (!nextTitle || nextTitle.trim().length < 2) return;
+    setRenameTaskState(task);
+    setRenameValue(task.title);
+  }
+
+  async function confirmRenameTask() {
+    if (!token || !renameTaskState) return;
+    const nextTitle = renameValue.trim();
+    if (nextTitle.length < 2) {
+      setError("Task title must have at least 2 characters.");
+      return;
+    }
     try {
-      setBusyTaskId(task.id);
+      setBusyTaskId(renameTaskState.id);
       setError(null);
-      await updateTask(token, task.id, { title: nextTitle.trim() });
+      await updateTask(token, renameTaskState.id, { title: nextTitle });
       setNotice("Task renamed.");
       await loadTasks(token, selectedProject);
+      setRenameTaskState(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to rename task");
     } finally {
@@ -137,14 +150,18 @@ export default function TasksPage() {
   }
 
   async function removeTask(task: Task) {
-    if (!token) return;
-    if (!window.confirm(`Delete task '${task.title}'?`)) return;
+    setDeletingTaskState(task);
+  }
+
+  async function confirmDeleteTask() {
+    if (!token || !deletingTaskState) return;
     try {
-      setBusyTaskId(task.id);
+      setBusyTaskId(deletingTaskState.id);
       setError(null);
-      await deleteTask(token, task.id);
+      await deleteTask(token, deletingTaskState.id);
       setNotice("Task deleted.");
       await loadTasks(token, selectedProject, 1);
+      setDeletingTaskState(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to delete task");
     } finally {
@@ -293,6 +310,26 @@ export default function TasksPage() {
             Next
           </Button>
         </div>
+        <Modal
+          open={Boolean(renameTaskState)}
+          title="Rename task"
+          description="Use a short action-oriented title."
+          confirmLabel="Save title"
+          loading={Boolean(renameTaskState && busyTaskId === renameTaskState.id)}
+          onCancel={() => setRenameTaskState(null)}
+          onConfirm={confirmRenameTask}
+        >
+          <Input label="Task title" value={renameValue} onChange={(e) => setRenameValue(e.target.value)} />
+        </Modal>
+        <Modal
+          open={Boolean(deletingTaskState)}
+          title="Delete task"
+          description={`This will permanently remove '${deletingTaskState?.title ?? ""}'.`}
+          confirmLabel="Delete task"
+          loading={Boolean(deletingTaskState && busyTaskId === deletingTaskState.id)}
+          onCancel={() => setDeletingTaskState(null)}
+          onConfirm={confirmDeleteTask}
+        />
       </section>
     </main>
   );

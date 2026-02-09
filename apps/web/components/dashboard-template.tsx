@@ -6,6 +6,7 @@ import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { EmptyState } from "./ui/empty-state";
 import { Input } from "./ui/input";
+import { Modal } from "./ui/modal";
 import { Select } from "./ui/select";
 import { Sidebar } from "./ui/sidebar";
 import { DataTable } from "./ui/table";
@@ -37,6 +38,7 @@ export function DashboardTemplate() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [taskToDelete, setTaskToDelete] = useState<DashboardTask | null>(null);
   const hasLoadedOnce = useRef(false);
 
   useEffect(() => {
@@ -99,12 +101,16 @@ export function DashboardTemplate() {
   }
 
   async function handleDelete(task: DashboardTask) {
-    if (!token) return;
-    if (!window.confirm(`Delete task '${task.task}'?`)) return;
+    setTaskToDelete(task);
+  }
+
+  async function confirmDeleteTask() {
+    if (!token || !taskToDelete) return;
     try {
-      setBusyTaskId(task.id);
-      await deleteTask(token, task.id);
+      setBusyTaskId(taskToDelete.id);
+      await deleteTask(token, taskToDelete.id);
       setNotice("Task deleted.");
+      setTaskToDelete(null);
       setRefreshTick((value) => value + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to delete task");
@@ -239,6 +245,22 @@ export function DashboardTemplate() {
             </Card>
           ))}
         </section>
+        {summary?.projectCount === 0 ? (
+          <section className="stats-grid">
+            <EmptyState
+              title="Start with your first project"
+              message="Projects organize your delivery and show recruiters how you structure work."
+              actionLabel="Create project"
+              actionHref="/projects"
+            />
+            <EmptyState
+              title="Then create your first tasks"
+              message="Use tasks to demonstrate execution flow from TODO to DONE."
+              actionLabel="Open tasks board"
+              actionHref="/tasks"
+            />
+          </section>
+        ) : null}
 
         <DataTable<DashboardTask>
           title="Execution Queue"
@@ -335,6 +357,15 @@ export function DashboardTemplate() {
             Next
           </Button>
         </div>
+        <Modal
+          open={Boolean(taskToDelete)}
+          title="Delete task"
+          description={`This will permanently remove '${taskToDelete?.task ?? ""}'.`}
+          confirmLabel="Delete task"
+          loading={Boolean(taskToDelete && busyTaskId === taskToDelete.id)}
+          onCancel={() => setTaskToDelete(null)}
+          onConfirm={confirmDeleteTask}
+        />
       </section>
     </main>
   );

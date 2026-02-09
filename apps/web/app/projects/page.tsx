@@ -6,6 +6,7 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Input } from "../../components/ui/input";
+import { Modal } from "../../components/ui/modal";
 import { Sidebar } from "../../components/ui/sidebar";
 import { Topbar } from "../../components/ui/topbar";
 import { Project, createProject, deleteProject, listProjects, updateProject } from "../../lib/api";
@@ -25,6 +26,9 @@ export default function ProjectsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [busyProjectId, setBusyProjectId] = useState<string | null>(null);
+  const [renameProject, setRenameProject] = useState<Project | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [deletingProject, setDeletingProject] = useState<Project | null>(null);
 
   async function loadProjects(currentToken: string, nextPage = page) {
     setLoading(true);
@@ -86,15 +90,24 @@ export default function ProjectsPage() {
   }
 
   async function handleRename(project: Project) {
-    if (!token) return;
-    const nextName = window.prompt("New project name", project.name);
-    if (!nextName || nextName.trim().length < 2) return;
+    setRenameProject(project);
+    setRenameValue(project.name);
+  }
+
+  async function submitRename() {
+    if (!token || !renameProject) return;
+    const nextName = renameValue.trim();
+    if (nextName.length < 2) {
+      setError("Project name must have at least 2 characters.");
+      return;
+    }
     try {
-      setBusyProjectId(project.id);
+      setBusyProjectId(renameProject.id);
       setError(null);
-      await updateProject(token, project.id, { name: nextName.trim() });
+      await updateProject(token, renameProject.id, { name: nextName });
       setNotice("Project renamed.");
       await loadProjects(token);
+      setRenameProject(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to rename project");
     } finally {
@@ -103,14 +116,18 @@ export default function ProjectsPage() {
   }
 
   async function handleDelete(project: Project) {
-    if (!token) return;
-    if (!window.confirm(`Delete project '${project.name}' and all tasks?`)) return;
+    setDeletingProject(project);
+  }
+
+  async function confirmDelete() {
+    if (!token || !deletingProject) return;
     try {
-      setBusyProjectId(project.id);
+      setBusyProjectId(deletingProject.id);
       setError(null);
-      await deleteProject(token, project.id);
+      await deleteProject(token, deletingProject.id);
       setNotice("Project deleted.");
       await loadProjects(token, 1);
+      setDeletingProject(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to delete project");
     } finally {
@@ -233,6 +250,26 @@ export default function ProjectsPage() {
           </Button>
         </div>
       </section>
+      <Modal
+        open={Boolean(renameProject)}
+        title="Rename project"
+        description="Choose a clear and professional project name."
+        confirmLabel="Save name"
+        loading={Boolean(renameProject && busyProjectId === renameProject.id)}
+        onCancel={() => setRenameProject(null)}
+        onConfirm={submitRename}
+      >
+        <Input label="Project name" value={renameValue} onChange={(e) => setRenameValue(e.target.value)} />
+      </Modal>
+      <Modal
+        open={Boolean(deletingProject)}
+        title="Delete project"
+        description={`This will permanently remove '${deletingProject?.name ?? ""}' and all tasks inside it.`}
+        confirmLabel="Delete project"
+        loading={Boolean(deletingProject && busyProjectId === deletingProject.id)}
+        onCancel={() => setDeletingProject(null)}
+        onConfirm={confirmDelete}
+      />
     </main>
   );
 }
