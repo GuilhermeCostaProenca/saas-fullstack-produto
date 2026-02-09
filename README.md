@@ -20,26 +20,22 @@ SaaS full-stack real com `web + api + postgres`, focado em portfolio profissiona
 - `infra/docker-compose.yml`
 - `PRD.md`, `ARCHITECTURE.md`, `BACKLOG.md`, `PLAN.md`
 
-## Como rodar
-1. Banco:
+## Como rodar (1 comando)
+Na raiz do repositorio:
 ```bash
-docker compose -f infra/docker-compose.yml up -d
-```
-2. API:
-```bash
-cd apps/api
-cp .env.example .env
-npm install
-npm run prisma:generate
-npm run prisma:migrate
 npm run dev
 ```
-3. Web:
+
+Esse comando faz automaticamente:
+- cria `apps/api/.env` e `apps/web/.env.local` se nao existirem
+- instala dependencias de `apps/api` e `apps/web` (se faltar `node_modules`)
+- sobe Postgres via `infra/docker-compose.yml`
+- executa `prisma generate` e `prisma migrate deploy`
+- inicia API e Web juntos
+
+Se quiser apenas preparar ambiente sem subir os servidores:
 ```bash
-cd apps/web
-cp .env.example .env.local
-npm install
-npm run dev
+npm run dev:prepare
 ```
 
 ## URLs
@@ -47,5 +43,5 @@ npm run dev
 - API: `http://localhost:3333`
 - Health: `http://localhost:3333/health`
 
-## Próximo passo
+## Proximo passo
 - Implementar tela de Projects e Tasks com dados reais da API.

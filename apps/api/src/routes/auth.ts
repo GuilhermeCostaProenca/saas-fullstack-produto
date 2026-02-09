@@ -1,7 +1,9 @@
 import { FastifyInstance } from "fastify";
-import { hash, compare } from "bcryptjs";
+import bcrypt from "bcryptjs";
 import { prisma } from "../plugins/prisma.js";
 import { loginSchema, registerSchema } from "../utils/schemas.js";
+
+const { hash, compare } = bcrypt;
 
 export async function authRoutes(app: FastifyInstance) {
   app.post("/auth/register", async (request, reply) => {
