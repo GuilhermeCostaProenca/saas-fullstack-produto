@@ -14,17 +14,28 @@ import { useSessionToken } from "../../lib/use-session-token";
 export default function ProjectsPage() {
   const { token, loading: authLoading, logout } = useSessionToken();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [search, setSearch] = useState("");
+  const [archivedFilter, setArchivedFilter] = useState<"all" | "false" | "true">("all");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  async function loadProjects(currentToken: string) {
+  async function loadProjects(currentToken: string, nextPage = page) {
     setLoading(true);
     setError(null);
     try {
-      const data = await listProjects(currentToken);
-      setProjects(data);
+      const data = await listProjects(currentToken, {
+        page: nextPage,
+        pageSize: 8,
+        search,
+        archived: archivedFilter,
+      });
+      setProjects(data.items);
+      setPage(data.page);
+      setTotalPages(data.totalPages);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load projects");
     } finally {
@@ -34,8 +45,9 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     if (!token) return;
-    loadProjects(token);
-  }, [token]);
+    loadProjects(token, 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, search, archivedFilter]);
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -44,7 +56,7 @@ export default function ProjectsPage() {
       await createProject(token, { name, description });
       setName("");
       setDescription("");
-      await loadProjects(token);
+      await loadProjects(token, 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create project");
     }
@@ -117,6 +129,18 @@ export default function ProjectsPage() {
                 </Button>
               </div>
             </form>
+            <div className="controls" style={{ marginTop: 8 }}>
+              <Input label="Search projects" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <select
+                className="select"
+                value={archivedFilter}
+                onChange={(e) => setArchivedFilter(e.target.value as "all" | "false" | "true")}
+              >
+                <option value="all">All</option>
+                <option value="false">Active only</option>
+                <option value="true">Archived only</option>
+              </select>
+            </div>
             {error ? <p className="auth-error">{error}</p> : null}
           </CardContent>
         </Card>
@@ -150,6 +174,21 @@ export default function ProjectsPage() {
             ))}
           </section>
         )}
+        <div className="controls-action">
+          <Button variant="ghost" onClick={() => token && loadProjects(token, Math.max(1, page - 1))} disabled={page <= 1}>
+            Previous
+          </Button>
+          <Badge tone="neutral">
+            Page {page} / {totalPages}
+          </Badge>
+          <Button
+            variant="ghost"
+            onClick={() => token && loadProjects(token, Math.min(totalPages, page + 1))}
+            disabled={page >= totalPages}
+          >
+            Next
+          </Button>
+        </div>
       </section>
     </main>
   );

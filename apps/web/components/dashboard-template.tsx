@@ -10,7 +10,7 @@ import { Select } from "./ui/select";
 import { Sidebar } from "./ui/sidebar";
 import { DataTable } from "./ui/table";
 import { Topbar } from "./ui/topbar";
-import { DashboardSummary, Task, getDashboardSummary, listProjectTasks, listProjects } from "../lib/api";
+import { DashboardSummary, getDashboardSummary, listTasks } from "../lib/api";
 import { useSessionToken } from "../lib/use-session-token";
 
 type DashboardTask = {
@@ -26,6 +26,8 @@ export function DashboardTemplate() {
   const { token, loading: authLoading, logout } = useSessionToken();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [tasks, setTasks] = useState<DashboardTask[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "TODO" | "DOING" | "DONE">("all");
   const [priorityFilter, setPriorityFilter] = useState<"all" | "LOW" | "MEDIUM" | "HIGH">("all");
@@ -39,23 +41,29 @@ export function DashboardTemplate() {
       setLoading(true);
       setError(null);
       try {
-        const [data, projects] = await Promise.all([getDashboardSummary(token), listProjects(token)]);
-        const activeProjects = projects.filter((project) => !project.archived);
-        const taskGroups = await Promise.all(activeProjects.map((project) => listProjectTasks(token, project.id)));
+        const [data, taskPage] = await Promise.all([
+          getDashboardSummary(token),
+          listTasks(token, {
+            page,
+            pageSize: 20,
+            search: search || undefined,
+            status: statusFilter === "all" ? undefined : statusFilter,
+            priority: priorityFilter === "all" ? undefined : priorityFilter,
+          }),
+        ]);
 
-        const rows: DashboardTask[] = activeProjects.flatMap((project, index) =>
-          taskGroups[index].map((task: Task) => ({
+        const rows: DashboardTask[] = taskPage.items.map((task) => ({
             id: task.id,
-            project: project.name,
+            project: task.project.name,
             task: task.title,
             status: task.status,
             priority: task.priority,
             owner: "You",
-          })),
-        );
+          }));
 
         setSummary(data);
         setTasks(rows);
+        setTotalPages(taskPage.totalPages);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load dashboard");
       } finally {
@@ -64,7 +72,7 @@ export function DashboardTemplate() {
     }
 
     loadSummary();
-  }, [token]);
+  }, [token, page, search, statusFilter, priorityFilter]);
 
   const metrics = [
     { label: "Active Projects", value: `${summary?.projectCount ?? "-"}`, trend: "Real data" },
@@ -73,20 +81,10 @@ export function DashboardTemplate() {
     { label: "Done", value: `${summary?.byStatus.done ?? "-"}`, trend: "Delivered" },
   ];
 
-  const filteredTasks = tasks.filter((row) => {
-    const matchSearch =
-      search.trim().length === 0 ||
-      row.project.toLowerCase().includes(search.toLowerCase()) ||
-      row.task.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === "all" || row.status === statusFilter;
-    const matchPriority = priorityFilter === "all" || row.priority === priorityFilter;
-    return matchSearch && matchStatus && matchPriority;
-  });
-
   const board = {
-    todo: filteredTasks.filter((row) => row.status === "TODO"),
-    doing: filteredTasks.filter((row) => row.status === "DOING"),
-    done: filteredTasks.filter((row) => row.status === "DONE"),
+    todo: tasks.filter((row) => row.status === "TODO"),
+    doing: tasks.filter((row) => row.status === "DOING"),
+    done: tasks.filter((row) => row.status === "DONE"),
   };
 
   if (authLoading || loading) {
@@ -126,11 +124,22 @@ export function DashboardTemplate() {
         <Topbar />
 
         <section className="controls card">
-          <Input label="Search" placeholder="Search project or task" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input
+            label="Search"
+            placeholder="Search project or task"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+          />
           <Select
             label="Status"
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as "all" | "TODO" | "DOING" | "DONE")}
+            onChange={(e) => {
+              setStatusFilter(e.target.value as "all" | "TODO" | "DOING" | "DONE");
+              setPage(1);
+            }}
             options={[
               { value: "all", label: "All statuses" },
               { value: "TODO", label: "Todo" },
@@ -141,7 +150,10 @@ export function DashboardTemplate() {
           <Select
             label="Priority"
             value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value as "all" | "LOW" | "MEDIUM" | "HIGH")}
+            onChange={(e) => {
+              setPriorityFilter(e.target.value as "all" | "LOW" | "MEDIUM" | "HIGH");
+              setPage(1);
+            }}
             options={[
               { value: "all", label: "All priorities" },
               { value: "HIGH", label: "High" },
@@ -156,6 +168,7 @@ export function DashboardTemplate() {
                 setSearch("");
                 setStatusFilter("all");
                 setPriorityFilter("all");
+                setPage(1);
               }}
             >
               Reset
@@ -182,8 +195,8 @@ export function DashboardTemplate() {
 
         <DataTable<DashboardTask>
           title="Execution Queue"
-          subtitle={`${filteredTasks.length} tasks matched your filters`}
-          rows={filteredTasks}
+          subtitle={`Page ${page} with server-side filters`}
+          rows={tasks}
           columns={[
             { key: "project", title: "Project", render: (row) => row.project },
             { key: "task", title: "Task", render: (row) => row.task },
@@ -247,10 +260,21 @@ export function DashboardTemplate() {
             </CardContent>
           </Card>
         </section>
+        <div className="controls-action">
+          <Button variant="ghost" onClick={() => setPage((prev) => Math.max(1, prev - 1))} disabled={page <= 1}>
+            Previous
+          </Button>
+          <Badge tone="neutral">
+            Page {page} / {totalPages}
+          </Badge>
+          <Button variant="ghost" onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))} disabled={page >= totalPages}>
+            Next
+          </Button>
+        </div>
 
         <EmptyState
-          title="Ready to connect backend"
-          message="This frontend template is prepared to receive real data from auth, projects, tasks and dashboard endpoints."
+          title="Server-side filters enabled"
+          message="Search, status, priority and pagination now run in the backend."
         />
       </section>
     </main>

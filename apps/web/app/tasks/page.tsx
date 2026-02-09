@@ -9,7 +9,7 @@ import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { Sidebar } from "../../components/ui/sidebar";
 import { Topbar } from "../../components/ui/topbar";
-import { Project, Task, createTask, deleteTask, listProjectTasks, listProjects, updateTask } from "../../lib/api";
+import { Project, Task, createTask, deleteTask, listTasks, listProjects, updateTask } from "../../lib/api";
 import { useSessionToken } from "../../lib/use-session-token";
 
 export default function TasksPage() {
@@ -17,24 +17,40 @@ export default function TasksPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState("");
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<"LOW" | "MEDIUM" | "HIGH">("MEDIUM");
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  async function loadProjectsAndTasks(currentToken: string) {
+  async function loadTasks(currentToken: string, projectId: string, nextPage = page) {
+    const taskData = await listTasks(currentToken, {
+      projectId: projectId || undefined,
+      page: nextPage,
+      pageSize: 24,
+      search,
+    });
+    setTasks(taskData.items);
+    setPage(taskData.page);
+    setTotalPages(taskData.totalPages);
+  }
+
+  async function loadProjectsAndTasks(currentToken: string, nextPage = 1) {
     setLoading(true);
     setError(null);
     try {
-      const projectData = await listProjects(currentToken);
-      setProjects(projectData);
-      const first = selectedProject || projectData.find((p) => !p.archived)?.id || "";
+      const projectData = await listProjects(currentToken, { page: 1, pageSize: 100, archived: "false" });
+      setProjects(projectData.items);
+      const first = selectedProject || projectData.items.find((p) => !p.archived)?.id || "";
       setSelectedProject(first);
       if (first) {
-        const taskData = await listProjectTasks(currentToken, first);
-        setTasks(taskData);
+        await loadTasks(currentToken, first, nextPage);
       } else {
         setTasks([]);
+        setPage(1);
+        setTotalPages(1);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load tasks");
@@ -45,19 +61,20 @@ export default function TasksPage() {
 
   useEffect(() => {
     if (!token) return;
-    loadProjectsAndTasks(token);
+    loadProjectsAndTasks(token, 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, search]);
 
   async function handleProjectChange(projectId: string) {
     if (!token) return;
     setSelectedProject(projectId);
     if (!projectId) {
       setTasks([]);
+      setPage(1);
+      setTotalPages(1);
       return;
     }
-    const taskData = await listProjectTasks(token, projectId);
-    setTasks(taskData);
+    await loadTasks(token, projectId, 1);
   }
 
   async function handleCreateTask(event: FormEvent<HTMLFormElement>) {
@@ -65,15 +82,13 @@ export default function TasksPage() {
     if (!token || !selectedProject) return;
     await createTask(token, selectedProject, { title, priority });
     setTitle("");
-    const taskData = await listProjectTasks(token, selectedProject);
-    setTasks(taskData);
+    await loadTasks(token, selectedProject, 1);
   }
 
   async function moveStatus(task: Task, status: Task["status"]) {
     if (!token) return;
     await updateTask(token, task.id, { status });
-    const taskData = await listProjectTasks(token, selectedProject);
-    setTasks(taskData);
+    await loadTasks(token, selectedProject);
   }
 
   async function renameTask(task: Task) {
@@ -81,16 +96,14 @@ export default function TasksPage() {
     const nextTitle = window.prompt("New task title", task.title);
     if (!nextTitle || nextTitle.trim().length < 2) return;
     await updateTask(token, task.id, { title: nextTitle.trim() });
-    const taskData = await listProjectTasks(token, selectedProject);
-    setTasks(taskData);
+    await loadTasks(token, selectedProject);
   }
 
   async function removeTask(task: Task) {
     if (!token) return;
     if (!window.confirm(`Delete task '${task.title}'?`)) return;
     await deleteTask(token, task.id);
-    const taskData = await listProjectTasks(token, selectedProject);
-    setTasks(taskData);
+    await loadTasks(token, selectedProject);
   }
 
   const grouped = useMemo(
@@ -144,6 +157,7 @@ export default function TasksPage() {
                 ]}
               />
               <Input label="Task title" value={title} onChange={(e) => setTitle(e.target.value)} required />
+              <Input label="Search tasks" value={search} onChange={(e) => setSearch(e.target.value)} />
               <Select
                 label="Priority"
                 value={priority}
@@ -172,6 +186,21 @@ export default function TasksPage() {
           <TaskColumn title="Doing" items={grouped.doing} onMove={moveStatus} onRename={renameTask} onDelete={removeTask} target="DONE" />
           <TaskColumn title="Done" items={grouped.done} onMove={moveStatus} onRename={renameTask} onDelete={removeTask} target="DONE" locked />
         </section>
+        <div className="controls-action">
+          <Button variant="ghost" onClick={() => token && loadTasks(token, selectedProject, Math.max(1, page - 1))} disabled={page <= 1}>
+            Previous
+          </Button>
+          <Badge tone="neutral">
+            Page {page} / {totalPages}
+          </Badge>
+          <Button
+            variant="ghost"
+            onClick={() => token && loadTasks(token, selectedProject, Math.min(totalPages, page + 1))}
+            disabled={page >= totalPages}
+          >
+            Next
+          </Button>
+        </div>
       </section>
     </main>
   );

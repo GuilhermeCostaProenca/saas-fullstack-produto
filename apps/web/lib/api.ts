@@ -38,6 +38,14 @@ export type Task = {
   createdAt: string;
 };
 
+export type PaginatedResponse<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
@@ -82,8 +90,25 @@ export async function getDashboardSummary(token: string) {
   });
 }
 
-export async function listProjects(token: string) {
-  return request<Project[]>("/projects", {
+function toQuery(params: Record<string, string | number | undefined>) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") query.set(key, String(value));
+  }
+  const out = query.toString();
+  return out.length ? `?${out}` : "";
+}
+
+export async function listProjects(
+  token: string,
+  params?: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    archived?: "all" | "true" | "false";
+  },
+) {
+  return request<PaginatedResponse<Project>>(`/projects${toQuery(params ?? {})}`, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -135,11 +160,36 @@ export async function deleteProject(token: string, projectId: string) {
 }
 
 export async function listProjectTasks(token: string, projectId: string) {
-  return request<Task[]>(`/projects/${projectId}/tasks`, {
+  return request<PaginatedResponse<Task>>(
+    `/projects/${projectId}/tasks${toQuery({
+      page: 1,
+      pageSize: 100,
+    })}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+}
+
+export async function listTasks(
+  token: string,
+  params?: {
+    projectId?: string;
+    search?: string;
+    status?: "TODO" | "DOING" | "DONE";
+    priority?: "LOW" | "MEDIUM" | "HIGH";
+    page?: number;
+    pageSize?: number;
+  },
+) {
+  return request<PaginatedResponse<Task & { project: { id: string; name: string } }>>(`/tasks${toQuery(params ?? {})}`, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${token}`,
-    },
+    }
   });
 }
 
